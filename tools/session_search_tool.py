@@ -389,7 +389,7 @@ def session_search(
         for result in raw_results:
             raw_sid = result["session_id"]
             resolved_sid = _resolve_to_parent(raw_sid)
-            # Skip the current session lineage — the agent already has that
+            # Skip the current session lineage -- the agent already has that
             # context, even if older turns live in parent fragments.
             if current_lineage_root and resolved_sid == current_lineage_root:
                 continue
@@ -399,8 +399,30 @@ def session_search(
                 result = dict(result)
                 result["session_id"] = resolved_sid
                 seen_sessions[resolved_sid] = result
-            if len(seen_sessions) >= limit:
-                break
+
+        # Re-rank by combined FTS5 relevance + recency: among equally relevant
+        # sessions, prefer the most recent.  Recency weight decays linearly
+        # over 90 days so very old sessions are ranked by relevance alone.
+        if len(seen_sessions) > limit:
+            import time as _time
+            _now = _time.time()
+            _RECENCY_WINDOW = 90 * 86400  # 90 days
+            _count = len(seen_sessions)
+            _scored = []
+            for _i, (_sid, _info) in enumerate(seen_sessions.items()):
+                _fts5_rank = float(_count - _i)
+                _ts = _info.get("session_started")
+                _recency = 0.0
+                if _ts:
+                    try:
+                        _age = max(0.0, _now - float(_ts))
+                        _recency = max(0.0, 1.0 - _age / _RECENCY_WINDOW)
+                    except (ValueError, TypeError):
+                        pass
+                _combined = _fts5_rank + _recency * limit
+                _scored.append((_combined, _sid, _info))
+            _scored.sort(key=lambda x: -x[0])
+            seen_sessions = {_sid: _info for _, _sid, _info in _scored[:limit]}
 
         # Prepare all sessions for parallel summarization
         tasks = []

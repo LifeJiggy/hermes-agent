@@ -4535,6 +4535,21 @@ class GatewayRunner:
             except Exception:
                 title = None
 
+        running_detail = ""
+        if is_running:
+            _agent = self._running_agents.get(session_key)
+            if _agent and _agent is not _AGENT_PENDING_SENTINEL and hasattr(_agent, "get_activity_summary"):
+                try:
+                    _sa = _agent.get_activity_summary()
+                    _iter = f"{_sa.get('api_call_count', '?')}/{_sa.get('max_iterations', '?')}"
+                    _idle = f"{_sa.get('seconds_since_activity', 0):.0f}s"
+                    _desc = _sa.get("last_activity_desc", "unknown")
+                    running_detail = f" — iter {_iter}, idle {_idle}, last: {_desc}"
+                except Exception:
+                    pass
+            elif _agent is _AGENT_PENDING_SENTINEL:
+                running_detail = " — starting up"
+
         lines = [
             "📊 **Hermes Gateway Status**",
             "",
@@ -4546,7 +4561,7 @@ class GatewayRunner:
             f"**Created:** {session_entry.created_at.strftime('%Y-%m-%d %H:%M')}",
             f"**Last Activity:** {session_entry.updated_at.strftime('%Y-%m-%d %H:%M')}",
             f"**Tokens:** {session_entry.total_tokens:,}",
-            f"**Agent Running:** {'Yes ⚡' if is_running else 'No'}",
+            f"**Agent Running:** {'Yes ⚡' if is_running else 'No'}{running_detail}",
             "",
             f"**Connected Platforms:** {', '.join(connected_platforms)}",
         ])
