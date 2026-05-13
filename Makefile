@@ -8,7 +8,7 @@ help: ## Show this help
 
 setup: ## Install all dependencies
 	pip install uv
-	uv sync
+	$(PYTHON) -m uv sync
 	cd ui-tui && npm install
 	cd website && npm install
 

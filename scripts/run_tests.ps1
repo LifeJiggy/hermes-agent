@@ -74,7 +74,7 @@ if ($LASTEXITCODE -ne 0) {
 # Build args
 $args = @("-n", "4", "--tb=short", "-v")
 if ($pytestArgs) {
-    $args = $pytestArgs
+    $args += $pytestArgs
 }
 
 Write-Host "[run_tests.ps1] Running: python -m pytest $($args -join ' ')" -ForegroundColor Cyan
