@@ -3253,12 +3253,13 @@ def _normalize_vision_provider(provider: Optional[str]) -> str:
 def _resolve_strict_vision_backend(
     provider: str,
     model: Optional[str] = None,
+    explicit_api_key: str = None,
 ) -> Tuple[Optional[Any], Optional[str]]:
     provider = _normalize_vision_provider(provider)
     if provider == "copilot":
         return resolve_provider_client("copilot", model, is_vision=True)
     if provider == "openrouter":
-        return _try_openrouter()
+        return _try_openrouter(explicit_api_key=explicit_api_key)
     if provider == "nous":
         return _try_nous(vision=True)
     if provider == "openai-codex":
