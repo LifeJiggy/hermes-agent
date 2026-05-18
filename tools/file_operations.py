@@ -581,6 +581,42 @@ class ShellFileOperations(FileOperations):
             result = self._exec(f"command -v {cmd} >/dev/null 2>&1 && echo 'yes'")
             self._command_cache[cmd] = result.stdout.strip() == 'yes'
         return self._command_cache[cmd]
+
+    def _check_git_baseline(self, path: str) -> Optional[str]:
+        """Check git baseline status for the given path.
+
+        Returns a warning string if the file is inside a git repo with
+        uncommitted changes, or None if the tree is clean or not in a repo.
+        """
+        if not self._has_command("git"):
+            return None
+        dir_path = os.path.dirname(path) or "."
+        check_cmd = (
+            f"cd {self._escape_shell_arg(dir_path)} 2>/dev/null "
+            f"&& git rev-parse --is-inside-work-tree 2>/dev/null"
+        )
+        result = self._exec(check_cmd)
+        if result.exit_code != 0 or "true" not in result.stdout:
+            return None
+        branch_cmd = (
+            f"cd {self._escape_shell_arg(dir_path)} 2>/dev/null "
+            f"&& git rev-parse --abbrev-ref HEAD 2>/dev/null"
+        )
+        branch_result = self._exec(branch_cmd)
+        branch = branch_result.stdout.strip() if branch_result.exit_code == 0 else "unknown"
+        dirty_cmd = (
+            f"cd {self._escape_shell_arg(dir_path)} 2>/dev/null "
+            f"&& git status --porcelain 2>/dev/null"
+        )
+        dirty_result = self._exec(dirty_cmd)
+        has_uncommitted = dirty_result.exit_code == 0 and bool(dirty_result.stdout.strip())
+        if has_uncommitted:
+            return (
+                f"Git working tree is dirty on branch '{branch}'. "
+                "Uncommitted changes exist — verify the current codebase state "
+                "before assuming memory or session history is accurate."
+            )
+        return None
     
     def _is_likely_binary(self, path: str, content_sample: str = None) -> bool:
         """
@@ -944,6 +980,9 @@ class ShellFileOperations(FileOperations):
         # rather than an external IDE.
         self._snapshot_lsp_baseline(path)
 
+        # Check git baseline before writing — warn if working tree is dirty
+        git_warning = self._check_git_baseline(path)
+
         # Create parent directories
         parent = os.path.dirname(path)
         dirs_created = False
@@ -993,6 +1032,7 @@ class ShellFileOperations(FileOperations):
             dirs_created=dirs_created,
             lint=lint_result.to_dict() if lint_result else None,
             lsp_diagnostics=lsp_diagnostics,
+            warning=git_warning,
         )
     
     # =========================================================================
