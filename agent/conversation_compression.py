@@ -415,7 +415,7 @@ def compress_context(
         system_prompt=new_system_prompt or "",
         tools=agent.tools or None,
     )
-    agent.context_compressor.last_prompt_tokens = _compressed_est
+    agent.context_compressor.last_prompt_tokens = 0
     agent.context_compressor.last_completion_tokens = 0
 
     # Clear the file-read dedup cache.  After compression the original
