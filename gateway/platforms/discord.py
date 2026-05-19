@@ -4888,6 +4888,8 @@ class DiscordAdapter(BasePlatformAdapter):
 # module-level ``if DISCORD_AVAILABLE:`` gate would miss the class defs
 # when initial import fails and DISCORD_AVAILABLE flips to True later.
 
+_DISCORD_UI_COMPONENTS_DEFINED = False
+
 
 def _define_discord_ui_components():
     """Define discord-dependent UI components.
@@ -4898,8 +4900,8 @@ def _define_discord_ui_components():
     """
     if not DISCORD_AVAILABLE:
         return
-    global _component_check_auth, ExecApprovalView, SlashConfirmView, UpdatePromptView, ModelPickerView, ClarifyChoiceView
-    if '_component_check_auth' in globals() and 'ExecApprovalView' in globals():
+    global _DISCORD_UI_COMPONENTS_DEFINED, _component_check_auth, ExecApprovalView, SlashConfirmView, UpdatePromptView, ModelPickerView, ClarifyChoiceView
+    if _DISCORD_UI_COMPONENTS_DEFINED:
         return
 
     def _component_check_auth(
@@ -5660,6 +5662,8 @@ def _define_discord_ui_components():
             self.resolved = True
             for child in self.children:
                 child.disabled = True
+
+    _DISCORD_UI_COMPONENTS_DEFINED = True
 
 
 # Module-level call so component views are available immediately, both at
