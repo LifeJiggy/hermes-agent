@@ -16,6 +16,7 @@ from agent.lmstudio_reasoning import resolve_lmstudio_effort
 from agent.moonshot_schema import is_moonshot_model, sanitize_moonshot_tools
 from agent.prompt_builder import DEVELOPER_ROLE_MODELS
 from agent.transports.base import ProviderTransport
+from agent.transports.kimi_k2_parser import try_parse as try_parse_k2
 from agent.transports.types import NormalizedResponse, ToolCall, Usage
 
 
@@ -529,6 +530,11 @@ class ChatCompletionsTransport(ProviderTransport):
         is preserved via ToolCall.provider_data.  reasoning_details (OpenRouter
         unified format) and reasoning_content (DeepSeek/Moonshot) are also
         preserved for downstream replay.
+
+        When ``msg.tool_calls`` is empty but the content contains Kimi K2
+        inline tool-call markers (``<|tool_calls_section_begin|>``), a K2
+        parser fallback reconstructs ``ToolCall`` objects from the embedded
+        JSON and strips the markers from the content string.
         """
         choice = response.choices[0]
         msg = choice.message
@@ -561,6 +567,16 @@ class ChatCompletionsTransport(ProviderTransport):
                         provider_data=tc_provider_data or None,
                     )
                 )
+
+        # Fallback: Kimi K2 (OpenRouter/Moonshot) embeds tool calls inside
+        # the content string when the structured ``tool_calls`` field is
+        # empty.  Parse them out so the agent loop sees proper ToolCall
+        # objects rather than raw tagged text.
+        if not tool_calls:
+            content, parsed = try_parse_k2(msg.content)
+            if parsed:
+                tool_calls = parsed
+                msg.content = content
 
         usage = None
         if hasattr(response, "usage") and response.usage:
