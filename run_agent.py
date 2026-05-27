@@ -3875,6 +3875,34 @@ class AIAgent:
         body = ("\n" + indent).join(out_lines)
         return f"{indent}{label}{body}"
 
+    def _execute_tool_calls_concurrent(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+        """Forwarder — see ``agent.tool_executor.execute_tool_calls_concurrent``."""
+        from agent.tool_executor import execute_tool_calls_concurrent
+        return execute_tool_calls_concurrent(self, assistant_message, messages, effective_task_id, api_call_count)
+
+    def _execute_tool_calls_sequential(self, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
+        """Forwarder — see ``agent.tool_executor.execute_tool_calls_sequential``."""
+        from agent.tool_executor import execute_tool_calls_sequential
+        return execute_tool_calls_sequential(self, assistant_message, messages, effective_task_id, api_call_count)
+
+    def _handle_max_iterations(self, messages: list, api_call_count: int) -> str:
+        """Forwarder — see ``agent.chat_completion_helpers.handle_max_iterations``."""
+        from agent.chat_completion_helpers import handle_max_iterations
+        return handle_max_iterations(self, messages, api_call_count)
+
+    def run_conversation(
+        self,
+        user_message: str,
+        system_message: str = None,
+        conversation_history: List[Dict[str, Any]] = None,
+        task_id: str = None,
+        stream_callback: Optional[callable] = None,
+        persist_user_message: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Forwarder — see ``agent.conversation_loop.run_conversation``."""
+        from agent.conversation_loop import run_conversation
+        return run_conversation(self, user_message, system_message, conversation_history, task_id, stream_callback, persist_user_message)
+
     def chat(self, message: str, stream_callback: Optional[callable] = None) -> str:
         """
         Simple chat interface that returns just the final response.
@@ -3888,6 +3916,19 @@ class AIAgent:
         """
         result = self.run_conversation(message, stream_callback=stream_callback)
         return result["final_response"]
+
+    def _run_codex_app_server_turn(
+        self,
+        *,
+        user_message: str,
+        original_user_message: Any,
+        messages: List[Dict[str, Any]],
+        effective_task_id: str,
+        should_review_memory: bool = False,
+    ) -> Dict[str, Any]:
+        """Forwarder — see ``agent.codex_runtime.run_codex_app_server_turn``."""
+        from agent.codex_runtime import run_codex_app_server_turn
+        return run_codex_app_server_turn(self, user_message=user_message, original_user_message=original_user_message, messages=messages, effective_task_id=effective_task_id, should_review_memory=should_review_memory)
 
 def main(
     query: str = None,
