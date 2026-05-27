@@ -76,27 +76,26 @@ def check_slack_requirements() -> bool:
     """Check if Slack dependencies are available.
 
     Lazy-installs slack-bolt/slack-sdk via ``tools.lazy_deps.ensure("platform.slack")``
-    on first call if not present.
+    on first call if not present. Rebinds all module-level globals on success.
     """
-    global SLACK_AVAILABLE, AsyncApp, AsyncSocketModeHandler, AsyncWebClient
     if SLACK_AVAILABLE:
         return True
-    try:
-        from tools.lazy_deps import ensure as _lazy_ensure
-        _lazy_ensure("platform.slack", prompt=False)
-    except Exception:
-        return False
-    try:
-        from slack_bolt.async_app import AsyncApp as _App
-        from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler as _Handler
-        from slack_sdk.web.async_client import AsyncWebClient as _Client
-    except ImportError:
-        return False
-    AsyncApp = _App
-    AsyncSocketModeHandler = _Handler
-    AsyncWebClient = _Client
-    SLACK_AVAILABLE = True
-    return True
+
+    def _import():
+        from slack_bolt.async_app import AsyncApp
+        from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+        from slack_sdk.web.async_client import AsyncWebClient
+        import aiohttp
+        return {
+            "AsyncApp": AsyncApp,
+            "AsyncSocketModeHandler": AsyncSocketModeHandler,
+            "AsyncWebClient": AsyncWebClient,
+            "aiohttp": aiohttp,
+            "SLACK_AVAILABLE": True,
+        }
+
+    from tools.lazy_deps import ensure_and_bind
+    return ensure_and_bind("platform.slack", _import, globals(), prompt=False)
 
 
 def _extract_text_from_slack_blocks(blocks: list) -> str:
@@ -483,7 +482,7 @@ class SlackAdapter(BasePlatformAdapter):
             "text": text,
         }
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(trust_env=True) as session:
                 async with session.post(
                     ctx["response_url"],
                     json=payload,
@@ -2786,7 +2785,10 @@ class SlackAdapter(BasePlatformAdapter):
             from hermes_cli.commands import slack_subcommand_map
             subcommand_map = slack_subcommand_map()
             subcommand_map["compact"] = "/compress"
-            first_word = text.split()[0] if text else ""
+            # Guard against whitespace-only text where ``text`` is truthy but
+            # ``text.split()`` returns ``[]`` (e.g. user sends ``/hermes   ``).
+            parts = text.split() if text else []
+            first_word = parts[0] if parts else ""
             if first_word in subcommand_map:
                 rest = text[len(first_word):].strip()
                 text = f"{subcommand_map[first_word]} {rest}".strip() if rest else subcommand_map[first_word]
