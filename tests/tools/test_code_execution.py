@@ -794,7 +794,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
     def test_none_enabled_tools_uses_all(self):
         """When enabled_tools is None, all sandbox tools should be available."""
         code = (
-            "from hermes_tools import terminal, web_search, read_file\n"
+            "from hermes_tools import web_search, read_file, write_file\n"
             "print('all imports ok')\n"
         )
         with patch("model_tools.handle_function_call",
@@ -808,7 +808,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
     def test_empty_enabled_tools_uses_all(self):
         """When enabled_tools is [] (empty), all sandbox tools should be available."""
         code = (
-            "from hermes_tools import terminal, web_search\n"
+            "from hermes_tools import web_search, read_file\n"
             "print('imports ok')\n"
         )
         with patch("model_tools.handle_function_call",
@@ -823,7 +823,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
         """When enabled_tools has no overlap with SANDBOX_ALLOWED_TOOLS,
         should fall back to all allowed tools."""
         code = (
-            "from hermes_tools import terminal\n"
+            "from hermes_tools import web_search\n"
             "print('fallback ok')\n"
         )
         with patch("model_tools.handle_function_call",

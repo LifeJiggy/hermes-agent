@@ -5107,12 +5107,15 @@ class TelegramAdapter(BasePlatformAdapter):
         """
         if not self._is_group_chat(message):
             allowed = os.getenv("TELEGRAM_ALLOWED_USERS", "").strip()
-            if allowed and message.from_user:
-                uid = str(message.from_user.id)
-                allowed_ids = {uid.strip() for uid in allowed.split(",") if uid.strip()}
-                if uid not in allowed_ids:
-                    return False
-            return True
+            if not allowed:
+                return True
+            allowed_ids = {uid.strip() for uid in allowed.split(",") if uid.strip()}
+            if "*" in allowed_ids:
+                return True
+            if not message.from_user:
+                return False
+            uid = str(message.from_user.id)
+            return uid in allowed_ids
 
         thread_id = getattr(message, "message_thread_id", None)
         allowed_topics = self._telegram_allowed_topics()

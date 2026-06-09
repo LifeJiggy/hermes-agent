@@ -1276,10 +1276,6 @@ def check_all_command_guards(command: str, env_type: str,
     a gateway force=True replay from bypassing one check when only the
     other was shown to the user.
     """
-    # Skip containers for both checks
-    if env_type in {"docker", "singularity", "modal", "daytona"}:
-        return {"approved": True, "message": None}
-
     # Hardline floor: unconditional block for catastrophic commands
     # (rm -rf /, mkfs, dd to raw device, shutdown/reboot, fork bomb,
     # kill -1). Applies BEFORE yolo / mode=off / cron approve-mode so
