@@ -1049,9 +1049,6 @@ def check_dangerous_command(command: str, env_type: str,
     Returns:
         {"approved": True/False, "message": str or None, ...}
     """
-    if env_type in {"docker", "singularity", "modal", "daytona"}:
-        return {"approved": True, "message": None}
-
     # Hardline floor: commands with no recovery path (rm -rf /, mkfs, dd
     # to raw device, shutdown/reboot, fork bomb, kill -1) are blocked
     # unconditionally, BEFORE the yolo bypass.  Opting into yolo is
@@ -1279,10 +1276,6 @@ def check_all_command_guards(command: str, env_type: str,
     a gateway force=True replay from bypassing one check when only the
     other was shown to the user.
     """
-    # Skip containers for both checks
-    if env_type in {"docker", "singularity", "modal", "daytona"}:
-        return {"approved": True, "message": None}
-
     # Hardline floor: unconditional block for catastrophic commands
     # (rm -rf /, mkfs, dd to raw device, shutdown/reboot, fork bomb,
     # kill -1). Applies BEFORE yolo / mode=off / cron approve-mode so

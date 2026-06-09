@@ -53,25 +53,29 @@ def _clean_state():
 
 
 # ---------------------------------------------------------------------------
-# Container skip
+# Container environments now go through command guards (defense-in-depth)
 # ---------------------------------------------------------------------------
 
 class TestContainerSkip:
-    def test_docker_skips_both(self):
+    def test_docker_blocks_hardline(self):
         result = check_all_command_guards("rm -rf /", "docker")
-        assert result["approved"] is True
+        assert result["approved"] is False
 
-    def test_singularity_skips_both(self):
+    def test_singularity_blocks_hardline(self):
         result = check_all_command_guards("rm -rf /", "singularity")
-        assert result["approved"] is True
+        assert result["approved"] is False
 
-    def test_modal_skips_both(self):
+    def test_modal_blocks_hardline(self):
         result = check_all_command_guards("rm -rf /", "modal")
-        assert result["approved"] is True
+        assert result["approved"] is False
 
-    def test_daytona_skips_both(self):
+    def test_daytona_blocks_hardline(self):
         result = check_all_command_guards("rm -rf /", "daytona")
-        assert result["approved"] is True
+        assert result["approved"] is False
+
+    def test_vercel_sandbox_blocks_hardline(self):
+        result = check_all_command_guards("rm -rf /", "vercel_sandbox")
+        assert result["approved"] is False
 
 
 # ---------------------------------------------------------------------------

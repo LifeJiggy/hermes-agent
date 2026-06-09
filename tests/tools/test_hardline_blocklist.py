@@ -234,16 +234,16 @@ def test_cron_approve_mode_cannot_bypass_hardline(clean_session, monkeypatch):
     assert result.get("hardline") is True
 
 
-def test_container_backends_still_bypass(clean_session):
-    """Containerized backends remain bypass-approved — they can't touch the host.
+def test_container_backends_now_enforce_guards(clean_session):
+    """Containerized backends now go through command guards (defense-in-depth).
 
-    Hardline only protects environments with real host impact (local, ssh).
+    Hardline and dangerous command detection applies to all environments.
     """
-    for env in ("docker", "singularity", "modal", "daytona"):
+    for env in ("docker", "singularity", "modal", "daytona", "vercel_sandbox"):
         r1 = check_dangerous_command("rm -rf /", env)
-        assert r1["approved"] is True, f"container {env} should still bypass"
+        assert r1["approved"] is False, f"container {env} should block hardline"
         r2 = check_all_command_guards("rm -rf /", env)
-        assert r2["approved"] is True, f"container {env} should still bypass"
+        assert r2["approved"] is False, f"container {env} should block hardline"
 
 
 def test_hardline_runs_before_dangerous_detection(clean_session):
@@ -368,9 +368,9 @@ def test_sudo_stdin_guard_not_blocked_by_yolo(clean_session, monkeypatch):
         assert result["approved"] is False, f"yolo leaked sudo guard on {cmd!r}"
 
 
-def test_sudo_stdin_guard_container_bypass(clean_session):
-    """Containerized backends still bypass — they can't touch the host."""
-    for env in ("docker", "singularity", "modal", "daytona"):
+def test_sudo_stdin_guard_blocks_in_containers(clean_session):
+    """Containerized backends now enforce the sudo stdin guard (defense-in-depth)."""
+    for env in ("docker", "singularity", "modal", "daytona", "vercel_sandbox"):
         for cmd in _SUDO_STDIN_BLOCK:
             result = check_all_command_guards(cmd, env)
-            assert result["approved"] is True, f"container {env} should bypass sudo guard on {cmd!r}"
+            assert result["approved"] is False, f"container {env} should block sudo guard on {cmd!r}"

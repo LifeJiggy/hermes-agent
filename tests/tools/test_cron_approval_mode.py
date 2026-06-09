@@ -220,8 +220,8 @@ class TestCronDenyModeAllGuards:
 class TestCronModeInteractions:
     """Cron mode should NOT interfere with other approval bypass mechanisms."""
 
-    def test_container_env_still_auto_approves(self, monkeypatch):
-        """Docker/sandbox environments bypass approvals regardless of cron_mode."""
+    def test_container_env_enforces_hardline(self, monkeypatch):
+        """Container environments now enforce hardline command blocks (defense-in-depth)."""
         monkeypatch.setenv("HERMES_CRON_SESSION", "1")
         monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
         monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
@@ -230,7 +230,7 @@ class TestCronModeInteractions:
         from unittest.mock import patch as mock_patch
         with mock_patch("tools.approval._get_cron_approval_mode", return_value="deny"):
             result = check_dangerous_command("rm -rf /", "docker")
-            assert result["approved"]
+            assert not result["approved"]
 
     def test_yolo_overrides_cron_deny(self, monkeypatch):
         """--yolo still bypasses cron_mode=deny for dangerous (non-hardline) commands."""
