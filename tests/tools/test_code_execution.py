@@ -206,24 +206,24 @@ class TestExecuteCode(unittest.TestCase):
         self.assertIn("hermes_constants.py", result["output"])
 
     def test_single_tool_call(self):
-        """Script calls terminal and prints the result."""
+        """Script calls web_search and prints the result."""
         code = """
-from hermes_tools import terminal
-result = terminal("echo hello")
+from hermes_tools import web_search
+result = web_search("test query")
 print(result.get("output", ""))
 """
         result = self._run(code)
         self.assertEqual(result["status"], "success")
-        self.assertIn("mock output for: echo hello", result["output"])
+        self.assertIn("mock output for: test query", result["output"])
         self.assertEqual(result["tool_calls_made"], 1)
 
     def test_multi_tool_chain(self):
         """Script calls multiple tools sequentially."""
         code = """
-from hermes_tools import terminal, read_file
-r1 = terminal("ls")
+from hermes_tools import web_search, read_file
+r1 = web_search("test query")
 r2 = read_file("test.py")
-print(f"terminal: {r1['output'][:20]}")
+print(f"search: {r1['output'][:20]}")
 print(f"file lines: {r2['total_lines']}")
 """
         result = self._run(code)
@@ -258,18 +258,18 @@ print(f"file lines: {r2['total_lines']}")
         code = '''
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from hermes_tools import terminal
+from hermes_tools import web_search
 
 N = 10
 
 def call(i):
-    r = terminal(f"echo TAG-{i}")
+    r = web_search(f"query-{i}")
     return i, r.get("output", "")
 
 with ThreadPoolExecutor(max_workers=N) as ex:
     results = list(ex.map(call, range(N)))
 
-mismatches = [(i, out) for i, out in results if f"TAG-{i}" not in out]
+mismatches = [(i, out) for i, out in results if f"query-{i}" not in out]
 if mismatches:
     print(f"MISMATCH {len(mismatches)}/{N}: {mismatches[:3]}")
 else:
@@ -278,12 +278,10 @@ else:
 
         def slow_mock(function_name, function_args, task_id=None, user_task=None):
             import time as _t
-            if function_name == "terminal":
+            if function_name == "web_search":
                 _t.sleep(0.05)  # ensure requests overlap on the socket
-                cmd = function_args.get("command", "")
-                # Echo semantics: strip leading "echo " and return the rest
-                out = cmd[5:] if cmd.startswith("echo ") else f"mock: {cmd}"
-                return json.dumps({"output": out, "exit_code": 0})
+                query = function_args.get("query", "")
+                return json.dumps({"output": f"result for: {query}", "status": "ok"})
             return _mock_handle_function_call(
                 function_name, function_args, task_id=task_id, user_task=user_task
             )
@@ -302,13 +300,13 @@ else:
     def test_excluded_tool_returns_error(self):
         """Script calling a tool not in the allow-list gets an error from RPC."""
         code = """
-from hermes_tools import terminal
-result = terminal("echo hi")
+from hermes_tools import vision_analyze
+result = vision_analyze("test.jpg")
 print(result)
 """
-        # Only enable web_search -- terminal should be excluded
+        # Only enable web_search -- vision_analyze should be excluded
         result = self._run(code, enabled_tools=["web_search"])
-        # terminal won't be in hermes_tools.py, so import fails
+        # vision_analyze won't be in hermes_tools.py, so import fails
         self.assertEqual(result["status"], "error")
 
     def test_empty_code(self):
