@@ -474,7 +474,7 @@ class TestSandboxWritesUtf8:
         reads/writes JSON response files.  Those must also specify UTF-8
         so non-ASCII tool results survive the round-trip intact."""
         from tools.code_execution_tool import generate_hermes_tools_module
-        stub = generate_hermes_tools_module(["terminal"], transport="file")
+        stub = generate_hermes_tools_module(["web_search"], transport="file")
         # The generated stub should open response + request files as UTF-8.
         assert 'encoding="utf-8"' in stub, (
             "File-based RPC stub does not specify encoding=\"utf-8\" — "
@@ -490,7 +490,7 @@ class TestSandboxWritesUtf8:
         from tools.code_execution_tool import generate_hermes_tools_module
         import tempfile, ast
         stub = generate_hermes_tools_module(
-            ["terminal", "read_file", "write_file"], transport="uds"
+            ["web_search", "read_file", "write_file"], transport="uds"
         )
         # Sanity: stub actually contains a non-ASCII character, otherwise
         # this test wouldn't prove anything meaningful.
@@ -530,7 +530,7 @@ class TestSandboxWritesUtf8:
         from tools.code_execution_tool import generate_hermes_tools_module
         import tempfile
 
-        stub = generate_hermes_tools_module(["terminal"], transport="uds")
+        stub = generate_hermes_tools_module(["web_search"], transport="uds")
         # Find a non-ASCII character we can use to prove the corruption.
         non_ascii = [c for c in stub if ord(c) > 127]
         if not non_ascii:
