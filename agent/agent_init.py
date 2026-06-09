@@ -1320,6 +1320,9 @@ def init_agent(
     compression_abort_on_summary_failure = str(
         _compression_cfg.get("abort_on_summary_failure", False)
     ).lower() in {"true", "1", "yes"}
+    compression_max_preflight_passes = int(
+        _compression_cfg.get("max_preflight_passes", 3)
+    )
 
     # Read optional explicit context_length override for the auxiliary
     # compression model. Custom endpoints often cannot report this via
@@ -1538,6 +1541,7 @@ def init_agent(
             api_mode=agent.api_mode,
             abort_on_summary_failure=compression_abort_on_summary_failure,
         )
+        agent.context_compressor.max_preflight_passes = compression_max_preflight_passes
     agent.compression_enabled = compression_enabled
 
     # Reject models whose context window is below the minimum required

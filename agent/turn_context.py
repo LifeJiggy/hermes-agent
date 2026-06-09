@@ -59,6 +59,8 @@ class TurnContext:
     plugin_user_context: str = ""
     # External-memory prefetch result, reused across loop iterations.
     ext_prefetch_cache: str = ""
+    # Number of preflight compression passes that ran (0 = none).
+    compression_loop_count: int = 0
 
 
 def build_turn_context(
@@ -246,6 +248,7 @@ def build_turn_context(
         )
 
     # ── Preflight context compression ──
+    _compression_passes = 0
     if (
         agent.compression_enabled
         and len(messages) > agent.context_compressor.protect_first_n
@@ -291,12 +294,15 @@ def build_turn_context(
                 f">= {_compressor.threshold_tokens:,} threshold. "
                 "This may take a moment."
             )
-            for _pass in range(3):
+            _max_passes = getattr(_compressor, "max_preflight_passes", 3)
+            _compression_passes = 0
+            for _pass in range(_max_passes):
                 _orig_len = len(messages)
                 messages, active_system_prompt = agent._compress_context(
                     messages, system_message, approx_tokens=_preflight_tokens,
                     task_id=effective_task_id,
                 )
+                _compression_passes += 1
                 if len(messages) >= _orig_len:
                     break  # Cannot compress further
                 conversation_history = None
@@ -385,4 +391,5 @@ def build_turn_context(
         should_review_memory=should_review_memory,
         plugin_user_context=plugin_user_context,
         ext_prefetch_cache=ext_prefetch_cache,
+        compression_loop_count=_compression_passes,
     )

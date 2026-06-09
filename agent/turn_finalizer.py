@@ -42,6 +42,7 @@ def finalize_turn(
     original_user_message,
     _should_review_memory,
     _turn_exit_reason,
+    _compression_loop_count=0,
 ):
     """Run the post-loop finalization and return the turn ``result`` dict.
 
@@ -351,6 +352,7 @@ def finalize_turn(
         "cost_status": agent.session_cost_status,
         "cost_source": agent.session_cost_source,
         "session_id": agent.session_id,
+        "compression_loop_count": _compression_loop_count,
     }
     if agent._tool_guardrail_halt_decision is not None:
         result["guardrail"] = agent._tool_guardrail_halt_decision.to_metadata()

@@ -643,6 +643,9 @@ class ContextCompressor(ContextEngine):
             MINIMUM_CONTEXT_LENGTH,
         )
         self.compression_count = 0
+        # Maximum number of iterative preflight compression passes (default 3).
+        # Configurable via compression.max_preflight_passes in config.yaml.
+        self.max_preflight_passes = 3
 
         # Derive token budgets: ratio is relative to the threshold, not total context
         target_tokens = int(self.threshold_tokens * self.summary_target_ratio)
@@ -677,6 +680,7 @@ class ContextCompressor(ContextEngine):
         # Anti-thrashing: track whether last compression was effective
         self._last_compression_savings_pct: float = 100.0
         self._ineffective_compression_count: int = 0
+        self._anti_thrash_warning_emitted: bool = False
         self._summary_failure_cooldown_until: float = 0.0
         self._last_summary_error: Optional[str] = None
         # When summary generation fails and a static fallback is inserted,
@@ -753,6 +757,7 @@ class ContextCompressor(ContextEngine):
             return False
         # Anti-thrashing: back off if recent compressions were ineffective
         if self._ineffective_compression_count >= 2:
+            self._anti_thrash_warning_emitted = True
             if not self.quiet_mode:
                 logger.warning(
                     "Compression skipped — last %d compressions saved <10%% each. "
@@ -2168,6 +2173,7 @@ The user has requested that this compaction PRIORITISE preserving all informatio
             self._ineffective_compression_count += 1
         else:
             self._ineffective_compression_count = 0
+            self._anti_thrash_warning_emitted = False
 
         if not self.quiet_mode:
             logger.info(
