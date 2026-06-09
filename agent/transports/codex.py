@@ -5,10 +5,21 @@ This transport owns format conversion and normalization — NOT client lifecycle
 streaming, or the _run_codex_stream() call path.
 """
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from agent.transports.base import ProviderTransport
 from agent.transports.types import NormalizedResponse, ToolCall
+
+logger = logging.getLogger(__name__)
+
+# Kwargs that the Codex backend rejects with HTTP 400 for certain models
+# (currently GPT-5.5 / codex-gpt-5.5).  Kept as a module-level constant
+# so both the stripping logic and tests share a single source of truth.
+_CODEX_KWARG_STRIP_KEYS = ("reasoning", "include", "store")
+
+# Model prefixes that trigger kwarg stripping on the Codex backend.
+_CODEX_STRIP_MODEL_PREFIXES = ("gpt-5.5", "codex-gpt-5.5")
 
 
 class ResponsesApiTransport(ProviderTransport):
@@ -241,9 +252,19 @@ class ResponsesApiTransport(ProviderTransport):
 
         # GPT-5.5 / codex-gpt-5.5 on the Codex backend rejects reasoning,
         # include, and store kwargs with 400. Strip them if present.
-        if is_codex_backend and (model.startswith("gpt-5.5") or model.startswith("codex-gpt-5.5")):
-            for _key in ("reasoning", "include", "store"):
-                kwargs.pop(_key, None)
+        model_lower = model.lower()
+        if is_codex_backend and any(
+            model_lower == p or model_lower.startswith(p + "-") or model_lower.startswith(p + ".")
+            for p in _CODEX_STRIP_MODEL_PREFIXES
+        ):
+            stripped = [k for k in _CODEX_KWARG_STRIP_KEYS if k in kwargs]
+            for _key in stripped:
+                kwargs.pop(_key)
+            if stripped:
+                logger.debug(
+                    "codex kwarg sanitize: stripped %s for model %s",
+                    stripped, model,
+                )
 
         if is_xai_responses and session_id:
             existing_extra_headers = kwargs.get("extra_headers")

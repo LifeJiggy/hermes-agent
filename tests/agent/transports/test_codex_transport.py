@@ -454,7 +454,6 @@ class TestCodexNormalizeResponse:
         assert '"command"' in tc.arguments
 
 
-
 class TestCodexTransportTimeout:
     """Forward per-request timeout from build_kwargs to the SDK kwargs."""
 
@@ -655,3 +654,102 @@ class TestPreflightSlashEnumStrip:
         assert params["properties"]["model_id"].get("enum") == [
             "Qwen/Qwen3.5-0.8B", "plain-id"
         ]
+
+
+class TestCodexGpt55KwargStripping:
+    """Tests for GPT-5.5 kwargs sanitization on the Codex backend.
+
+    GPT-5.5 / codex-gpt-5.5 reject reasoning, include, and store with 400.
+    These tests verify the stripping logic covers all edge cases.
+    """
+
+    def _build(self, transport, model, is_codex_backend=True, **extra):
+        messages = [{"role": "user", "content": "Hi"}]
+        return transport.build_kwargs(
+            model=model, messages=messages, tools=[],
+            is_codex_backend=is_codex_backend, **extra,
+        )
+
+    def test_gpt55_strips_reasoning(self, transport):
+        """GPT-5.5 on codex: reasoning set by build_kwargs must be stripped."""
+        kw = self._build(transport, "gpt-5.5")
+        # build_kwargs sets reasoning when reasoning_enabled=True (default).
+        # The stripping block must remove it for GPT-5.5 on codex.
+        assert "reasoning" not in kw
+
+    def test_gpt55_strips_include(self, transport):
+        """GPT-5.5 on codex: include set by build_kwargs must be stripped."""
+        kw = self._build(transport, "gpt-5.5")
+        # build_kwargs sets include=["reasoning.encrypted_content"] when
+        # reasoning_enabled=True.  Stripping must remove it.
+        assert "include" not in kw
+
+    def test_gpt55_strips_store(self, transport):
+        """GPT-5.5 on codex: store=False (default) must be stripped."""
+        kw = self._build(transport, "gpt-5.5")
+        # build_kwargs always sets store=False.  Stripping must remove it.
+        assert "store" not in kw
+
+    def test_gpt55_strips_injected_via_request_overrides(self, transport):
+        """Values injected via request_overrides must also be stripped."""
+        kw = self._build(
+            transport, "gpt-5.5",
+            request_overrides={"reasoning": {"effort": "high"}, "store": True},
+        )
+        assert "reasoning" not in kw
+        assert "store" not in kw
+
+    def test_case_insensitive_prefix(self, transport):
+        """GPT-5.5 (uppercase) must also trigger stripping."""
+        kw = self._build(transport, "GPT-5.5")
+        assert "reasoning" not in kw
+        assert "include" not in kw
+
+    def test_codex_gpt55_case_insensitive(self, transport):
+        kw = self._build(transport, "Codex-GPT-5.5")
+        assert "reasoning" not in kw
+        assert "include" not in kw
+
+    def test_non_codex_backend_preserves_kwargs(self, transport):
+        """Non-codex backends must NOT strip these kwargs."""
+        kw = self._build(transport, "gpt-5.5", is_codex_backend=False)
+        # Non-codex: build_kwargs sets reasoning (default) and include.
+        # The stripping block must NOT run — both remain present.
+        assert kw.get("reasoning") is not None
+        assert "include" in kw
+        # store=False is always set by build_kwargs; non-codex keeps it.
+        assert kw.get("store") is False
+
+    def test_non_affected_model_preserves_reasoning(self, transport):
+        """GPT-5.4 must NOT strip reasoning/include."""
+        kw = self._build(transport, "gpt-5.4")
+        # Default reasoning_enabled=True → reasoning dict present
+        assert kw.get("reasoning") is not None
+        assert isinstance(kw.get("reasoning"), dict)
+        assert "include" in kw
+
+    def test_partial_prefix_no_false_positive(self, transport):
+        """gpt-5.50 must not trigger stripping."""
+        kw = self._build(transport, "gpt-5.50")
+        # gpt-5.50 should NOT be stripped — reasoning remains
+        assert kw.get("reasoning") is not None
+
+    def test_gpt55_preserves_other_kwargs(self, transport):
+        """Stripping must not remove unrelated kwargs injected via request_overrides."""
+        kw = self._build(
+            transport, "gpt-5.5",
+            request_overrides={"extra_headers": {"X-Test": "1"}, "parallel_tool_calls": True},
+        )
+        assert kw.get("extra_headers") == {"X-Test": "1"}
+        assert kw.get("parallel_tool_calls") is True
+
+    def test_gpt55_no_error_when_keys_absent(self, transport):
+        """Stripping when keys are already absent must not raise."""
+        kw = self._build(transport, "gpt-5.5")
+        assert "reasoning" not in kw
+        assert "include" not in kw
+
+    def test_strip_keys_constant_matches_fix(self, transport):
+        """Verify the module constant covers the expected keys."""
+        from agent.transports.codex import _CODEX_KWARG_STRIP_KEYS
+        assert set(_CODEX_KWARG_STRIP_KEYS) == {"reasoning", "include", "store"}
