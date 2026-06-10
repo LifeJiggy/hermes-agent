@@ -822,6 +822,38 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
 # Main entry point
 # =============================================================================
 
+def _require_approval_for_skill_action(action: str, name: str) -> Optional[Dict[str, Any]]:
+    """Check if skill action requires user approval.
+
+    Agent-created skills are persistent prompt-injection vectors loaded every
+    session.  In non-interactive mode (no TTY, cron, delegation) the agent must
+    not autonomously mutate skills without explicit user confirmation.
+
+    Returns error dict (to return to caller) if blocked, None if allowed.
+    """
+    if os.getenv("HERMES_YOLO_MODE") or os.getenv("HERMES_INTERACTIVE"):
+        return None
+    logger.warning(
+        "Skill '%s' action '%s' requires user approval - non-interactive, no YOLO mode",
+        name, action,
+    )
+    return {
+        "success": False,
+        "error": (
+            f"Cannot '{action}' skill '{name}' without user confirmation. "
+            f"The agent must ask the user to approve this skill change. "
+            f"To auto-approve, enable YOLO mode or run interactively."
+        ),
+    }
+
+
+# Actions that mutate persistent skill state and require approval in
+# non-interactive mode.  Read-only actions (list, show) are always safe.
+_MUTATING_SKILL_ACTIONS = frozenset({
+    "create", "edit", "delete", "patch", "write_file", "remove_file",
+})
+
+
 def skill_manage(
     action: str,
     name: str,
@@ -839,6 +871,11 @@ def skill_manage(
 
     Returns JSON string with results.
     """
+    if action in _MUTATING_SKILL_ACTIONS:
+        blocked = _require_approval_for_skill_action(action, name)
+        if blocked:
+            return json.dumps(blocked, ensure_ascii=False)
+
     if action == "create":
         if not content:
             return tool_error("content is required for 'create'. Provide the full SKILL.md text (frontmatter + body).", success=False)

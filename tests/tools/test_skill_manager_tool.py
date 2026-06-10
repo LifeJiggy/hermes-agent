@@ -12,6 +12,8 @@ from tools.skill_manager_tool import (
     _validate_category,
     _validate_frontmatter,
     _validate_file_path,
+    _require_approval_for_skill_action,
+    _MUTATING_SKILL_ACTIONS,
     _create_skill,
     _edit_skill,
     _patch_skill,
@@ -28,7 +30,8 @@ def _skill_dir(tmp_path):
     """Patch both SKILLS_DIR and get_all_skills_dirs so _find_skill searches
     only the temp directory — not the real ~/.hermes/skills/."""
     with patch("tools.skill_manager_tool.SKILLS_DIR", tmp_path), \
-         patch("agent.skill_utils.get_all_skills_dirs", return_value=[tmp_path]):
+         patch("agent.skill_utils.get_all_skills_dirs", return_value=[tmp_path]), \
+         patch.dict("os.environ", {"HERMES_YOLO_MODE": "1"}, clear=False):
         yield
 
 
@@ -957,3 +960,60 @@ class TestPinnedGuard:
                        side_effect=RuntimeError("sidecar broken")):
                 result = _delete_skill("my-skill")
         assert result["success"] is True
+
+
+# ---------------------------------------------------------------------------
+# Approval gate (_require_approval_for_skill_action)
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalGate:
+    """Skill mutations require user approval in non-interactive mode."""
+
+    def test_blocked_without_yolo_or_interactive(self):
+        """Mutating actions blocked when no YOLO or INTERACTIVE env."""
+        with patch.dict("os.environ", {}, clear=True):
+            result = _require_approval_for_skill_action("create", "test-skill")
+        assert result is not None
+        assert result["success"] is False
+        assert "approval" in result["error"].lower() or "confirm" in result["error"].lower()
+
+    def test_allowed_with_yolo_mode(self):
+        """Mutating actions allowed when HERMES_YOLO_MODE is set."""
+        with patch.dict("os.environ", {"HERMES_YOLO_MODE": "1"}):
+            result = _require_approval_for_skill_action("create", "test-skill")
+        assert result is None
+
+    def test_allowed_with_interactive(self):
+        """Mutating actions allowed when HERMES_INTERACTIVE is set."""
+        with patch.dict("os.environ", {"HERMES_INTERACTIVE": "1"}):
+            result = _require_approval_for_skill_action("delete", "test-skill")
+        assert result is None
+
+    def test_readonly_actions_always_allowed(self):
+        """Read-only actions (list, show) bypass the approval gate entirely.
+
+        The gate is only invoked for actions in _MUTATING_SKILL_ACTIONS,
+        so list/show never reach _require_approval_for_skill_action.
+        """
+        assert "list" not in _MUTATING_SKILL_ACTIONS
+        assert "show" not in _MUTATING_SKILL_ACTIONS
+
+    def test_all_mutating_actions_gated(self):
+        """Every action in _MUTATING_SKILL_ACTIONS goes through the gate."""
+        from tools.skill_manager_tool import _MUTATING_SKILL_ACTIONS
+        with patch.dict("os.environ", {}, clear=True):
+            for action in _MUTATING_SKILL_ACTIONS:
+                result = _require_approval_for_skill_action(action, "x")
+                assert result is not None, f"action '{action}' should be gated"
+
+    def test_skill_manage_returns_approval_error(self, tmp_path):
+        """skill_manage returns JSON approval error for blocked mutations."""
+        with patch("tools.skill_manager_tool.SKILLS_DIR", tmp_path), \
+             patch("agent.skill_utils.get_all_skills_dirs", return_value=[tmp_path]), \
+             patch.dict("os.environ", {}, clear=True):
+            raw = skill_manage("create", "test-skill", content=VALID_SKILL_CONTENT)
+        import json
+        result = json.loads(raw)
+        assert result["success"] is False
+        assert "approval" in result["error"].lower() or "confirm" in result["error"].lower()
