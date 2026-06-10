@@ -54,7 +54,11 @@ def _mock_handle_function_call(function_name, function_args, task_id=None, user_
         return json.dumps({"output": f"mock output for: {cmd}", "exit_code": 0})
     if function_name == "web_search":
         query = function_args.get("query", "")
-        return json.dumps({"output": f"mock output for: {query}", "exit_code": 0})
+        return json.dumps({
+            "output": f"mock output for: {query}",
+            "exit_code": 0,
+            "results": [{"title": f"Mock result for {query}", "url": "https://example.com", "snippet": "test"}],
+        })
     if function_name == "read_file":
         return json.dumps({"content": "line 1\nline 2\nline 3\n", "total_lines": 3})
     if function_name == "write_file":
