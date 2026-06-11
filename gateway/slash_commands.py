@@ -419,6 +419,22 @@ class GatewaySlashCommandsMixin:
             except Exception:
                 db_total_tokens = 0
 
+        running_detail = ""
+        if is_running:
+            from gateway.run import _AGENT_PENDING_SENTINEL
+            _agent = self._running_agents.get(session_key)
+            if _agent is _AGENT_PENDING_SENTINEL:
+                running_detail = " - starting up"
+            elif _agent and hasattr(_agent, "get_activity_summary"):
+                try:
+                    _sa = _agent.get_activity_summary()
+                    _iter = f"{_sa.get('api_call_count', '?')}/{_sa.get('max_iterations', '?')}"
+                    _idle = f"{_sa.get('seconds_since_activity', 0):.0f}s"
+                    _desc = _sa.get("last_activity_desc", "unknown")
+                    running_detail = f" - iter {_iter}, idle {_idle}, last: {_desc}"
+                except Exception:
+                    pass
+
         lines = [
             t("gateway.status.header"),
             "",
@@ -430,7 +446,7 @@ class GatewaySlashCommandsMixin:
             t("gateway.status.created", timestamp=session_entry.created_at.strftime('%Y-%m-%d %H:%M')),
             t("gateway.status.last_activity", timestamp=session_entry.updated_at.strftime('%Y-%m-%d %H:%M')),
             t("gateway.status.tokens", tokens=f"{db_total_tokens:,}"),
-            t("gateway.status.agent_running", state=t("gateway.status.state_yes") if is_running else t("gateway.status.state_no")),
+            t("gateway.status.agent_running", state=(t("gateway.status.state_yes") + running_detail) if is_running else t("gateway.status.state_no")),
         ])
         if queue_depth:
             lines.append(t("gateway.status.queued", count=queue_depth))
