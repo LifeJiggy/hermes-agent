@@ -398,7 +398,12 @@ def _discover(
     sort: Optional[str],
     current_session_id: str = None,
 ) -> str:
-    """Discovery shape: FTS5 + anchored window + bookends per hit. Single call."""
+    """Discovery shape: FTS5 + recency re-ranking + anchored window + bookends.
+
+    Collects up to 50 raw FTS5 hits, dedupes by session lineage, then
+    re-ranks by a blend of FTS5 position and recency so recent sessions
+    with similar relevance are preferred over old ones.
+    """
     role_list = role_filter if role_filter else ["user", "assistant"]
 
     try:
@@ -426,14 +431,14 @@ def _discover(
 
     current_lineage_root = _resolve_to_parent(db, current_session_id) if current_session_id else None
 
-    # Dedupe by lineage. Keep the raw owning session_id on the surviving
-    # row — only that pairs validly with the FTS5 match id for the anchored
-    # window. parent_session_id is exposed separately when different.
+    # ── Dedupe by lineage ──────────────────────────────────────────────
+    # Keep the raw owning session_id on the surviving row — only that
+    # pairs validly with the FTS5 match id for the anchored window.
+    # Track FTS5 position for re-ranking.
     seen_sessions = {}
-    for r in raw_results:
+    for idx, r in enumerate(raw_results):
         raw_sid = r["session_id"]
         resolved_sid = _resolve_to_parent(db, raw_sid)
-        # Skip the current session lineage
         if current_lineage_root and resolved_sid == current_lineage_root:
             continue
         if current_session_id and raw_sid == current_session_id:
@@ -441,12 +446,75 @@ def _discover(
         if resolved_sid not in seen_sessions:
             row = dict(r)
             row["_lineage_root"] = resolved_sid
+            row["_fts5_position"] = idx
             seen_sessions[resolved_sid] = row
-        if len(seen_sessions) >= limit:
-            break
 
-    results = []
+    if not seen_sessions:
+        return json.dumps({
+            "success": True,
+            "mode": "discover",
+            "query": query,
+            "results": [],
+            "count": 0,
+            "message": "No matching sessions found (all were current session).",
+        }, ensure_ascii=False)
+
+    # ── Recency re-ranking ─────────────────────────────────────────────
+    # Score each session by blending FTS5 rank position with recency.
+    # Recent sessions get a boost so they rank above old sessions with
+    # similar FTS5 relevance.  Linear decay over a 90-day window.
+    import time as _time
+    now = _time.time()
+    _RECENCY_WINDOW_DAYS = 14
+    _RECENCY_WINDOW_SECS = _RECENCY_WINDOW_DAYS * 86400
+
+    scored = []
     for lineage_root, match_info in seen_sessions.items():
+        # Fetch session metadata for timestamp
+        try:
+            session_meta = db.get_session(lineage_root) or {}
+        except Exception:
+            session_meta = {}
+
+        started_at = session_meta.get("started_at") or match_info.get("session_started")
+        recency_score = 0.0
+        if started_at:
+            try:
+                from datetime import datetime
+                if isinstance(started_at, str):
+                    ts = datetime.fromisoformat(started_at).timestamp()
+                else:
+                    ts = started_at.timestamp() if hasattr(started_at, 'timestamp') else float(started_at)
+                age_secs = max(0, now - ts)
+                # Linear decay: 1.0 for brand-new, 0.0 for >= 90 days old
+                recency_score = max(0.0, 1.0 - (age_secs / _RECENCY_WINDOW_SECS))
+            except (ValueError, TypeError, OSError):
+                pass
+
+        # FTS5 position score: lower position = higher relevance (inverted)
+        fts5_pos = match_info.get("_fts5_position", 0)
+        fts5_score = 1.0 / (1.0 + fts5_pos)
+
+        # Combined score: 40% FTS5 relevance + 60% recency
+        combined = 0.4 * fts5_score + 0.6 * recency_score
+        scored.append((combined, lineage_root, match_info, session_meta))
+
+    # Sort by combined score descending, then by recency (newer first) as tiebreaker
+    def _started_ts(item):
+        meta = item[3]
+        sa = meta.get("started_at")
+        if sa is None:
+            return 0.0
+        try:
+            return sa.timestamp() if hasattr(sa, 'timestamp') else float(sa)
+        except (TypeError, ValueError):
+            return 0.0
+    scored.sort(key=lambda x: (x[0], _started_ts(x)), reverse=True)
+    top_hits = scored[:limit]
+
+    # ── Build result entries ────────────────────────────────────────────
+    results = []
+    for _score, lineage_root, match_info, session_meta in top_hits:
         hit_sid = match_info.get("session_id") or lineage_root
         msg_id = match_info.get("id")
         try:
@@ -454,11 +522,6 @@ def _discover(
         except Exception as e:
             logging.warning("get_anchored_view failed for %s/%s: %s", hit_sid, msg_id, e, exc_info=True)
             continue
-
-        try:
-            session_meta = db.get_session(lineage_root) or {}
-        except Exception:
-            session_meta = {}
 
         entry = {
             "session_id": hit_sid,

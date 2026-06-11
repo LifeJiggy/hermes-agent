@@ -520,3 +520,69 @@ class TestCrossProfileRead:
             assert result["success"] is True, kwargs
             assert result["mode"] == "read"
             assert result["session_id"] == "s_other"
+
+
+# =========================================================================
+# Recency re-ranking
+# =========================================================================
+
+
+class TestRecencyRanking:
+    """Session search re-ranks by recency so recent sessions appear first."""
+
+    def test_recent_session_ranks_above_old(self, db):
+        """A recent session with matching keywords should rank above an old one."""
+        now = int(time.time())
+
+        # Old session (30 days ago) with "deploy" keyword
+        db.create_session("s_old", source="cli")
+        db._conn.execute("UPDATE sessions SET started_at = ? WHERE id = ?",
+                         (now - 30 * 86400, "s_old"))
+        db.append_message("s_old", role="user", content="deploy the application")
+        db.append_message("s_old", role="assistant", content="Deploying...")
+
+        # Recent session (1 hour ago) with same keyword
+        db.create_session("s_recent", source="cli")
+        db._conn.execute("UPDATE sessions SET started_at = ? WHERE id = ?",
+                         (now - 3600, "s_recent"))
+        db.append_message("s_recent", role="user", content="deploy the application again")
+        db.append_message("s_recent", role="assistant", content="Deployed successfully.")
+        db._conn.commit()
+
+        result = json.loads(session_search(db=db, query="deploy", limit=5))
+        assert result["success"] is True
+        assert result["count"] == 2
+        # Recent session should be first
+        assert result["results"][0]["session_id"] == "s_recent"
+        assert result["results"][1]["session_id"] == "s_old"
+
+    def test_limit_respected_after_reranking(self, db):
+        """Only `limit` results returned after recency re-ranking."""
+        now = int(time.time())
+
+        for i in range(5):
+            sid = f"s_{i}"
+            db.create_session(sid, source="cli")
+            db._conn.execute("UPDATE sessions SET started_at = ? WHERE id = ?",
+                             (now - i * 3600, sid))
+            db.append_message(sid, role="user", content="test query alpha")
+            db.append_message(sid, role="assistant", content="response")
+        db._conn.commit()
+
+        result = json.loads(session_search(db=db, query="alpha", limit=3))
+        assert result["success"] is True
+        assert result["count"] == 3
+        # Most recent (s_0, 0 hours ago) should be first
+        assert result["results"][0]["session_id"] == "s_0"
+
+    def test_empty_after_excluding_current_session(self, db):
+        """Recency ranking handles edge case where all sessions are current."""
+        now = int(time.time())
+        db.create_session("s1", source="cli")
+        db.append_message("s1", role="user", content="hello world")
+        db.append_message("s1", role="assistant", content="hi there")
+        db._conn.commit()
+
+        result = json.loads(session_search(db=db, query="hello", current_session_id="s1"))
+        assert result["success"] is True
+        assert result["count"] == 0
