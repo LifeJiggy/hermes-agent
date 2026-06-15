@@ -262,7 +262,7 @@ class TestBuildSkillsSystemPrompt:
         )
         result = build_skills_system_prompt()
         assert "python-debug" in result
-        # Names-only mode: descriptions are NOT emitted to avoid OAuth Max 400
+        # Names-only mode: descriptions are NOT emitted to reduce prompt token usage
         assert "Debug Python scripts" not in result
         assert "available_skills" in result
 
@@ -379,7 +379,7 @@ class TestBuildSkillsSystemPrompt:
             result = build_skills_system_prompt()
 
         assert "imessage" in result
-        # Names-only mode: descriptions are NOT emitted to avoid OAuth Max 400
+        # Names-only mode: descriptions are NOT emitted to reduce prompt token usage
         assert "Send iMessages" not in result
 
     def test_excludes_disabled_skills(self, monkeypatch, tmp_path):
