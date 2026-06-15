@@ -1331,7 +1331,7 @@ class TelegramAdapter(BasePlatformAdapter):
                 "Restarting gateway." % MAX_NETWORK_RETRIES
             )
             logger.error("[%s] %s Last error: %s", self.name, message, error)
-            self._set_fatal_error("telegram_network_error", message, retryable=True)
+            self._set_fatal_error("telegram_network_error", message, retryable=True, notify=False)
             await self._notify_fatal_error()
             return
 
@@ -1529,7 +1529,7 @@ class TelegramAdapter(BasePlatformAdapter):
             "[%s] %s Original error: %s",
             self.name, message, error,
         )
-        self._set_fatal_error("telegram_polling_conflict", message, retryable=False)
+        self._set_fatal_error("telegram_polling_conflict", message, retryable=False, notify=False)
         try:
             if self._app and self._app.updater:
                 await self._app.updater.stop()

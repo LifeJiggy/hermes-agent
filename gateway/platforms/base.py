@@ -1839,6 +1839,10 @@ class BasePlatformAdapter(ABC):
         self._fatal_error_message: Optional[str] = None
         self._fatal_error_retryable = True
         self._fatal_error_handler: Optional[Callable[["BasePlatformAdapter"], Awaitable[None] | None]] = None
+        self._fatal_error_extra_handlers: list = []
+        self._fatal_error_history: list = []
+        self._FATAL_ERROR_HISTORY_MAX = 20
+        self._consecutive_retryable_errors: int = 0
         
         # Track active message handlers per session for interrupt support.
         # _active_sessions stores the per-session interrupt Event; _session_tasks
@@ -2135,16 +2139,7 @@ class BasePlatformAdapter(ABC):
 
     def add_fatal_error_handler(self, handler: Callable[["BasePlatformAdapter"], Awaitable[None] | None]) -> None:
         """Add an additional fatal error handler (chained, called after primary)."""
-        if not hasattr(self, "_fatal_error_extra_handlers"):
-            self._fatal_error_extra_handlers = []
         self._fatal_error_extra_handlers.append(handler)
-
-    # ── Enhancement 1: Fatal error history ────────────────────────────
-    # Track the last N fatal errors with timestamps for debugging.
-    # Stored as a deque of dicts: [{code, message, retryable, timestamp}, ...]
-    # ──────────────────────────────────────────────────────────────────
-    _fatal_error_history: list = []
-    _FATAL_ERROR_HISTORY_MAX = 20
 
     def _record_fatal_error_history(self, code: str, message: str, retryable: bool) -> None:
         """Record a fatal error in the history ring buffer."""
@@ -2163,11 +2158,6 @@ class BasePlatformAdapter(ABC):
     def fatal_error_history(self) -> list:
         """Return a copy of the fatal error history."""
         return list(self._fatal_error_history)
-
-    # ── Enhancement 2: Retry backoff hint ─────────────────────────────
-    # Track consecutive retryable errors to suggest exponential backoff.
-    # ──────────────────────────────────────────────────────────────────
-    _consecutive_retryable_errors: int = 0
 
     @property
     def retry_backoff_seconds(self) -> float:
@@ -2195,7 +2185,7 @@ class BasePlatformAdapter(ABC):
             return
         self._write_runtime_status_safe("disconnected", platform_state="disconnected", error_code=None, error_message=None)
 
-    def _set_fatal_error(self, code: str, message: str, *, retryable: bool) -> None:
+    def _set_fatal_error(self, code: str, message: str, *, retryable: bool, notify: bool = True) -> None:
         self._running = False
         self._fatal_error_code = code
         self._fatal_error_message = message
@@ -2208,7 +2198,8 @@ class BasePlatformAdapter(ABC):
         # Record in history ring buffer
         self._record_fatal_error_history(code, message, retryable)
         self._write_runtime_status_safe("fatal", platform_state="fatal", error_code=code, error_message=message)
-        self._schedule_fatal_notify()
+        if notify:
+            self._schedule_fatal_notify()
 
     def _schedule_fatal_notify(self) -> None:
         """Schedule _notify_fatal_error if a handler is registered.
@@ -2219,9 +2210,15 @@ class BasePlatformAdapter(ABC):
         if self._fatal_error_handler is None:
             return
         try:
-            asyncio.get_running_loop().create_task(self._notify_fatal_error())
+            task = asyncio.get_running_loop().create_task(self._notify_fatal_error())
         except RuntimeError:
+            return
+        try:
+            self._background_tasks.add(task)
+        except TypeError:
             pass
+        if hasattr(task, "add_done_callback"):
+            task.add_done_callback(self._background_tasks.discard)
 
     def _write_runtime_status_safe(self, context: str, **kwargs) -> None:
         """Write runtime status; log first failure per context at warning, rest at debug.
