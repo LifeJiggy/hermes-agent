@@ -400,12 +400,14 @@ class TestCacheDirectoryMounts:
         assert mounts[0]["container_path"] == "/root/.hermes/cache/documents"
 
     def test_legacy_dir_names_resolved(self, tmp_path, monkeypatch):
-        """Old-style dir names (e.g. document_cache) are resolved correctly."""
+        """Populated old-style dir names (e.g. document_cache) are resolved correctly."""
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()
-        # Use legacy dir name — get_hermes_dir prefers old if it exists
+        # Populate legacy dirs so get_hermes_dir honours them
         (hermes_home / "document_cache").mkdir()
+        (hermes_home / "document_cache" / ".keep").touch()
         (hermes_home / "image_cache").mkdir()
+        (hermes_home / "image_cache" / ".keep").touch()
         monkeypatch.setenv("HERMES_HOME", str(hermes_home))
 
         mounts = get_cache_directory_mounts()
