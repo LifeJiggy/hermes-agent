@@ -311,24 +311,24 @@ class TestExecuteCode(unittest.TestCase):
         self.assertIn("hermes_constants.py", result["output"])
 
     def test_single_tool_call(self):
-        """Script calls terminal and prints the result."""
+        """Script calls web_search and prints the result."""
         code = """
-from hermes_tools import terminal
-result = terminal("echo hello")
-print(result.get("output", ""))
+from hermes_tools import web_search
+result = web_search(query="hello")
+print(result.get("results", [{}])[0].get("title", ""))
 """
         result = self._run(code)
         self.assertEqual(result["status"], "success")
-        self.assertIn("mock output for: echo hello", result["output"])
+        self.assertIn("Example", result["output"])
         self.assertEqual(result["tool_calls_made"], 1)
 
     def test_multi_tool_chain(self):
         """Script calls multiple tools sequentially."""
         code = """
-from hermes_tools import terminal, read_file
-r1 = terminal("ls")
-r2 = read_file("test.py")
-print(f"terminal: {r1['output'][:20]}")
+from hermes_tools import web_search, read_file
+r1 = web_search(query="test")
+r2 = read_file(path="test.py")
+print(f"search: {r1['results'][0]['title']}")
 print(f"file lines: {r2['total_lines']}")
 """
         result = self._run(code)
@@ -363,13 +363,13 @@ print(f"file lines: {r2['total_lines']}")
         code = '''
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from hermes_tools import terminal
+from hermes_tools import web_search
 
 N = 10
 
 def call(i):
-    r = terminal(f"echo TAG-{i}")
-    return i, r.get("output", "")
+    r = web_search(query=f"TAG-{i}")
+    return i, r.get("results", [{}])[0].get("title", "")
 
 with ThreadPoolExecutor(max_workers=N) as ex:
     results = list(ex.map(call, range(N)))
@@ -411,7 +411,7 @@ from hermes_tools import terminal
 result = terminal("echo hi")
 print(result)
 """
-        # Only enable web_search -- terminal should be excluded
+        # Only enable web_search -- terminal is excluded from SANDBOX_ALLOWED_TOOLS
         result = self._run(code, enabled_tools=["web_search"])
         # terminal won't be in hermes_tools.py, so import fails
         self.assertEqual(result["status"], "error")
@@ -899,7 +899,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
     def test_none_enabled_tools_uses_all(self):
         """When enabled_tools is None, all sandbox tools should be available."""
         code = (
-            "from hermes_tools import terminal, web_search, read_file\n"
+            "from hermes_tools import web_search, read_file\n"
             "print('all imports ok')\n"
         )
         with patch("model_tools.handle_function_call",
@@ -913,7 +913,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
     def test_empty_enabled_tools_uses_all(self):
         """When enabled_tools is [] (empty), all sandbox tools should be available."""
         code = (
-            "from hermes_tools import terminal, web_search\n"
+            "from hermes_tools import web_search, read_file\n"
             "print('imports ok')\n"
         )
         with patch("model_tools.handle_function_call",
@@ -928,7 +928,7 @@ class TestExecuteCodeEdgeCases(unittest.TestCase):
         """When enabled_tools has no overlap with SANDBOX_ALLOWED_TOOLS,
         should fall back to all allowed tools."""
         code = (
-            "from hermes_tools import terminal\n"
+            "from hermes_tools import web_search\n"
             "print('fallback ok')\n"
         )
         with patch("model_tools.handle_function_call",
