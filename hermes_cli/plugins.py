@@ -282,22 +282,75 @@ def _resolve_dependencies(
     plugins: Dict[str, "PluginManifest"],
     manifest: "PluginManifest",
     chain: Optional[Set[str]] = None,
+    _visited: Optional[Set[str]] = None,
 ) -> List[str]:
-    """Resolve dependencies for a plugin manifest. Returns list of missing deps."""
+    """Resolve dependencies recursively with cycle and transitive-dep detection.
+
+    Returns a list of missing/unsatisfied dependency descriptions.
+    *chain* is the current call-chain (for cycle detection);
+    *_visited* tracks already-processed plugins (to avoid redundant work).
+    """
     if chain is None:
         chain = set()
-    missing = []
+    if _visited is None:
+        _visited = set()
+
+    missing: List[str] = []
     for dep_name, constraint in manifest.depends_on.items():
+        # --- cycle detection ---
         if dep_name in chain:
-            logger.warning("Circular dependency detected: %s -> %s", chain, dep_name)
+            logger.warning(
+                "Circular dependency detected: %s -> %s", sorted(chain), dep_name,
+            )
             continue
+        # --- already processed ---
+        if dep_name in _visited:
+            continue
+        # --- dependency not installed ---
         if dep_name not in plugins:
             missing.append(f"{dep_name} ({constraint})" if constraint else dep_name)
             continue
+        # --- version check ---
         installed_ver = plugins[dep_name].version
         if constraint and not _satisfies_version(installed_ver, constraint):
             missing.append(f"{dep_name} (installed {installed_ver}, need {constraint})")
+            continue
+        # --- recurse into transitive deps ---
+        _visited.add(dep_name)
+        dep_manifest = plugins[dep_name]
+        chain.add(dep_name)
+        missing.extend(
+            _resolve_dependencies(plugins, dep_manifest, chain, _visited)
+        )
+        chain.discard(dep_name)
+
     return missing
+
+
+def _validate_plugin_name(name: str) -> Path:
+    """Validate a plugin name and return the safe target path inside plugins/.
+
+    Raises ``ValueError`` if the name contains path-traversal sequences or
+    would resolve outside the plugins directory.  Mirrors the containment
+    logic in ``hermes_cli/plugins_cmd.py:_sanitize_plugin_name``.
+    """
+    import re as _re
+    if not name or not _re.match(r'^[a-zA-Z0-9_][a-zA-Z0-9_/\-]*$', name):
+        raise ValueError(
+            f"Invalid plugin name '{name}'. "
+            "Only alphanumeric, underscore, hyphen, and single '/' allowed."
+        )
+    if ".." in name or name.startswith("/") or name.startswith("\\"):
+        raise ValueError(f"Plugin name '{name}' contains path-traversal sequences.")
+
+    plugins_dir = get_hermes_home() / "plugins"
+    target = (plugins_dir / name).resolve()
+    plugins_resolved = plugins_dir.resolve()
+    if not str(target).startswith(str(plugins_resolved) + os.sep) and target != plugins_resolved:
+        raise ValueError(
+            f"Plugin name '{name}' resolves outside plugins directory: {target}"
+        )
+    return target
 
 
 def _env_enabled(name: str) -> bool:
@@ -1248,7 +1301,9 @@ class PluginContext:
         """Register a lifecycle hook callback.
 
         Unknown hook names produce a warning but are still stored so
-        forward-compatible plugins don't break.
+        forward-compatible plugins don't break.  The callback is annotated
+        with ``__HERMES_PLUGIN__`` so ownership-aware teardown can identify
+        which plugin registered it.
         """
         if hook_name not in VALID_HOOKS:
             logger.warning(
@@ -1258,6 +1313,7 @@ class PluginContext:
                 hook_name,
                 ", ".join(sorted(VALID_HOOKS)),
             )
+        callback.__HERMES_PLUGIN__ = self.manifest.name
         self._manager._hooks.setdefault(hook_name, []).append(callback)
         logger.debug("Plugin %s registered hook: %s", self.manifest.name, hook_name)
 
@@ -2109,15 +2165,14 @@ class PluginManager:
     ) -> Dict[str, Any]:
         """Register a plugin distribution entry.
 
-        Args:
-            name: Plugin name
-            registry_url: URL for updates or git repository
-            version: Installed version string
-
-        Returns:
-            Dict with success/error info
+        Validates the plugin name against path-traversal attacks before
+        writing anything.  Delegates actual cloning/fetch to the existing
+        ``plugins_cmd`` installer when available.
         """
-        target = get_hermes_home() / "plugins" / name
+        try:
+            target = _validate_plugin_name(name)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
         if target.exists():
             return {"success": False, "error": f"Plugin '{name}' already installed at {target}"}
         if not registry_url:
@@ -2138,8 +2193,16 @@ class PluginManager:
             return {"success": False, "error": str(e)}
 
     def uninstall_plugin(self, name: str) -> Dict[str, Any]:
-        """Remove a user-installed plugin directory and clean up registered items."""
-        target = get_hermes_home() / "plugins" / name
+        """Remove a user-installed plugin directory and clean up registered items.
+
+        Validates the plugin name against path-traversal attacks.
+        Hook teardown is ownership-aware: only callbacks registered by *this*
+        plugin are removed, leaving other plugins' callbacks intact.
+        """
+        try:
+            target = _validate_plugin_name(name)
+        except ValueError as e:
+            return {"success": False, "error": str(e)}
         if not target.exists():
             return {"success": False, "error": f"Plugin '{name}' not found"}
         loaded = self._plugins.get(name)
@@ -2148,10 +2211,16 @@ class PluginManager:
         import shutil
         try:
             if loaded:
+                # Unregister tools
                 for tool in loaded.tools_registered:
                     self._plugin_tool_names.discard(tool)
-                for hook in loaded.hooks_registered:
-                    self._hooks.pop(hook, None)
+                # Ownership-aware hook teardown: only remove this plugin's callbacks
+                for hook_name, callbacks in list(self._hooks.items()):
+                    self._hooks[hook_name] = [
+                        cb for cb in callbacks
+                        if getattr(cb, "__HERMES_PLUGIN__", None) != name
+                    ]
+                # Unregister commands
                 for cmd in loaded.commands_registered:
                     self._plugin_commands.pop(cmd, None)
                 self._plugins.pop(name, None)
