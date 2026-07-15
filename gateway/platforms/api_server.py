@@ -816,10 +816,23 @@ if AIOHTTP_AVAILABLE:
 
     @web.middleware
     async def rate_limit_middleware(request, handler):
-        """Rate limit by IP address."""
+        """Rate limit by IP address.
+
+        Only honours X-Forwarded-For when HERMES_TRUSTED_PROXIES is set
+        (comma-separated list of proxy IPs).  Otherwise derives the bucket
+        key from aiohttp's peer address to prevent client-side bypass.
+        """
         limiter = getattr(request.app, "_rate_limiter", None) or request.app.get("rate_limiter")
         if limiter:
-            client_ip = request.headers.get("X-Forwarded-For", request.remote or "unknown")
+            trusted_proxies = os.environ.get("HERMES_TRUSTED_PROXIES", "")
+            if trusted_proxies:
+                proxy_set = {p.strip() for p in trusted_proxies.split(",") if p.strip()}
+                if (request.remote or "") in proxy_set:
+                    client_ip = request.headers.get("X-Forwarded-For", request.remote or "unknown")
+                else:
+                    client_ip = request.remote or "unknown"
+            else:
+                client_ip = request.remote or "unknown"
             allowed, current, limit = limiter.check(client_ip)
             if not allowed:
                 return web.json_response(

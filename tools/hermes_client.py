@@ -155,7 +155,7 @@ class HermesClient:
         body: Dict[str, Any] = {"model": model, "input": input_data, "stream": stream}
         if instructions:
             body["instructions"] = instructions
-        return self._request("POST", "/v1/responses", json=body)
+        return self._request("POST", "/v1/responses", _json=body)
 
     def get_response(self, response_id: str) -> Dict[str, Any]:
         """Get a response by ID."""
@@ -169,11 +169,7 @@ class HermesClient:
 
     def create_run(self, **kwargs: Any) -> Dict[str, Any]:
         """Create a batch run."""
-        return self._request("POST", "/v1/runs", json=kwargs)
-
-    def list_runs(self) -> Dict[str, Any]:
-        """List all runs."""
-        return self._request("GET", "/v1/runs")
+        return self._request("POST", "/v1/runs", _json=kwargs)
 
     def get_run(self, run_id: str) -> Dict[str, Any]:
         """Get a run by ID."""

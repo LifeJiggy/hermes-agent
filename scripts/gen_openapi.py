@@ -150,21 +150,37 @@ def _extract_routes() -> list:
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and hasattr(node.func, "attr"):
-                if node.func.attr in ("get", "post", "put", "delete"):
+                method_name = node.func.attr
+                # Match add_get / add_post / add_put / add_delete
+                if method_name in ("add_get", "add_post", "add_put", "add_delete"):
+                    http_method = method_name.replace("add_", "").upper()
                     path = ""
-                    method = node.func.attr.upper()
                     handler = ""
+                    # Extract path from positional string args
                     for arg in node.args:
                         if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                             path = arg.value
                             break
+                    # Extract handler from positional args — handles both
+                    # self._handler (Attribute) and bare_name (Name)
+                    for arg in node.args:
+                        if isinstance(arg, ast.Attribute):
+                            handler = arg.attr
+                            break
+                        elif isinstance(arg, ast.Name):
+                            handler = arg.id
+                            break
+                    # Also check keyword args (handler= or path=)
                     for kw in node.keywords:
-                        if kw.arg == "handler" and hasattr(kw.value, "attr"):
-                            handler = kw.value.attr
+                        if kw.arg == "handler":
+                            if hasattr(kw.value, "attr"):
+                                handler = kw.value.attr
+                            elif isinstance(kw.value, ast.Name):
+                                handler = kw.value.id
                         elif kw.arg == "path" and isinstance(kw.value, ast.Constant):
                             path = kw.value.value
                     if handler and path:
-                        routes.append({"method": method, "path": path, "handler": handler})
+                        routes.append({"method": http_method, "path": path, "handler": handler})
     except SyntaxError:
         pass
 
