@@ -66,6 +66,20 @@ class TestModelRecommender:
         assert task_type == "explain"
         assert complexity <= 0.5
 
+    def test_openrouter_provider_includes_all_models(self):
+        """openrouter should map to all models since it routes to multiple providers."""
+        from tools.model_recommender import PROVIDER_MODELS, MODEL_COST_PER_MTOK
+        assert "openrouter" in PROVIDER_MODELS
+        assert len(PROVIDER_MODELS["openrouter"]) == len(MODEL_COST_PER_MTOK)
+
+    def test_openrouter_filtering_works(self):
+        """Filtering by openrouter should return all candidates (no filtering)."""
+        from tools.model_recommender import model_recommend
+        output = model_recommend("Write code", preferred_provider="openrouter")
+        data = json.loads(output)
+        assert data["success"] is True
+        assert len(data["recommendations"]) >= 1
+
 
 class TestModelRecommenderSchema:
     def test_schema_has_required_fields(self):
@@ -75,3 +89,8 @@ class TestModelRecommenderSchema:
         assert "prompt" in props
         assert "preferred_provider" in props
         assert "task_id" in props
+
+    def test_openrouter_in_enum(self):
+        from tools.model_recommender import MODEL_RECOMMEND_SCHEMA
+        enum = MODEL_RECOMMEND_SCHEMA["parameters"]["properties"]["preferred_provider"]["enum"]
+        assert "openrouter" in enum

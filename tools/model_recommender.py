@@ -12,45 +12,47 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 TASK_CATEGORIES = {
-    "code-gen": {"models": ["claude-sonnet-4", "gpt-4o", "deepseek-v3"], "complexity_weight": 0.8},
-    "code-review": {"models": ["claude-sonnet-4", "gpt-4o", "deepseek-v3"], "complexity_weight": 0.7},
-    "debug": {"models": ["claude-sonnet-4", "gpt-4o"], "complexity_weight": 0.9},
-    "explain": {"models": ["gpt-4o-mini", "claude-haiku", "gemini-flash"], "complexity_weight": 0.4},
-    "refactor": {"models": ["claude-sonnet-4", "gpt-4o", "deepseek-v3"], "complexity_weight": 0.7},
-    "test-write": {"models": ["gpt-4o-mini", "claude-haiku", "gemini-flash"], "complexity_weight": 0.5},
-    "config": {"models": ["gpt-4o-mini", "gemini-flash"], "complexity_weight": 0.3},
-    "search": {"models": ["gemini-flash", "gpt-4o-mini"], "complexity_weight": 0.2},
-    "summarize": {"models": ["claude-haiku", "gpt-4o-mini"], "complexity_weight": 0.3},
-    "documentation": {"models": ["claude-haiku", "gpt-4o-mini", "gemini-flash"], "complexity_weight": 0.4},
+    "code-gen": {"models": ["claude-sonnet-4-6", "gpt-4o", "deepseek-v3"], "complexity_weight": 0.8},
+    "code-review": {"models": ["claude-sonnet-4-6", "gpt-4o", "deepseek-v3"], "complexity_weight": 0.7},
+    "debug": {"models": ["claude-sonnet-4-6", "gpt-4o"], "complexity_weight": 0.9},
+    "explain": {"models": ["gpt-4o-mini", "claude-haiku-4-5", "gemini-2.5-flash"], "complexity_weight": 0.4},
+    "refactor": {"models": ["claude-sonnet-4-6", "gpt-4o", "deepseek-v3"], "complexity_weight": 0.7},
+    "test-write": {"models": ["gpt-4o-mini", "claude-haiku-4-5", "gemini-2.5-flash"], "complexity_weight": 0.5},
+    "config": {"models": ["gpt-4o-mini", "gemini-2.5-flash"], "complexity_weight": 0.3},
+    "search": {"models": ["gemini-2.5-flash", "gpt-4o-mini"], "complexity_weight": 0.2},
+    "summarize": {"models": ["claude-haiku-4-5", "gpt-4o-mini"], "complexity_weight": 0.3},
+    "documentation": {"models": ["claude-haiku-4-5", "gpt-4o-mini", "gemini-2.5-flash"], "complexity_weight": 0.4},
 }
 
 MODEL_COST_PER_MTOK = {
-    "claude-sonnet-4": {"input": 15.0, "output": 75.0},
-    "claude-haiku": {"input": 0.80, "output": 4.0},
-    "gpt-4o": {"input": 10.0, "output": 30.0},
+    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+    "gpt-4o": {"input": 2.5, "output": 10.0},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "deepseek-v3": {"input": 0.27, "output": 1.10},
-    "gemini-flash": {"input": 0.075, "output": 0.30},
-    "gemini-pro": {"input": 0.50, "output": 1.50},
+    "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
+    "gemini-2.5-pro": {"input": 0.50, "output": 1.50},
 }
 
 QUALITY_SCORES = {
-    "claude-sonnet-4": 0.95, "gpt-4o": 0.9, "deepseek-v3": 0.85,
-    "claude-haiku": 0.7, "gpt-4o-mini": 0.65, "gemini-flash": 0.6,
-    "gemini-pro": 0.75,
+    "claude-sonnet-4-6": 0.95, "gpt-4o": 0.9, "deepseek-v3": 0.85,
+    "claude-haiku-4-5": 0.7, "gpt-4o-mini": 0.65, "gemini-2.5-flash": 0.6,
+    "gemini-2.5-pro": 0.75,
 }
 
 SPEED_SCORES = {
-    "claude-haiku": 0.9, "gpt-4o-mini": 0.8, "gemini-flash": 0.95,
-    "gpt-4o": 0.6, "claude-sonnet-4": 0.5, "deepseek-v3": 0.7,
-    "gemini-pro": 0.7,
+    "claude-haiku-4-5": 0.9, "gpt-4o-mini": 0.8, "gemini-2.5-flash": 0.95,
+    "gpt-4o": 0.6, "claude-sonnet-4-6": 0.5, "deepseek-v3": 0.7,
+    "gemini-2.5-pro": 0.7,
 }
 
 PROVIDER_MODELS = {
-    "anthropic": ["claude-sonnet-4", "claude-haiku"],
+    "anthropic": ["claude-sonnet-4-6", "claude-haiku-4-5"],
     "openai": ["gpt-4o", "gpt-4o-mini"],
-    "google": ["gemini-flash", "gemini-pro"],
+    "google": ["gemini-2.5-flash", "gemini-2.5-pro"],
     "deepseek": ["deepseek-v3"],
+    # openrouter routes to multiple providers — include all models.
+    "openrouter": list(MODEL_COST_PER_MTOK.keys()),
 }
 
 
@@ -162,7 +164,7 @@ def model_recommend(
                 }
 
     if complexity < 0.4:
-        result["tip"] = "Use gpt-4o-mini or claude-haiku for simple tasks to save 10-50x cost."
+        result["tip"] = "Use gpt-4o-mini or claude-haiku-4-5 for simple tasks to save 10-50x cost."
 
     return json.dumps(result, ensure_ascii=False)
 
@@ -191,7 +193,7 @@ MODEL_RECOMMEND_SCHEMA = {
             "prompt": {"type": "string", "description": "Task prompt to analyze"},
             "preferred_provider": {
                 "type": "string", "description": "Preferred provider",
-                "enum": ["openrouter", "anthropic", "openai", "google", "deepseek"],
+                "enum": ["anthropic", "openai", "google", "deepseek", "openrouter"],
             },
             "max_cost_per_mtok": {"type": "number", "description": "Max cost per million tokens"},
             "prefer_speed": {"type": "boolean", "description": "Prefer faster models", "default": False},

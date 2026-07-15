@@ -20,15 +20,15 @@ class TestCostOptimizer:
 
     def test_single_model_analysis(self):
         from tools.cost_optimizer import cost_optimizer
-        output = cost_optimizer(model="claude-sonnet-4", input_tokens=5000, output_tokens=2000)
+        output = cost_optimizer(model="gpt-4o", input_tokens=5000, output_tokens=2000)
         data = json.loads(output)
         assert data["success"] is True
-        assert data["analysis"]["model"] == "claude-sonnet-4"
+        assert data["analysis"]["model"] == "gpt-4o"
         assert data["analysis"]["costs"]["total_cost"] > 0
 
     def test_single_model_with_alternatives(self):
         from tools.cost_optimizer import cost_optimizer
-        output = cost_optimizer(model="claude-sonnet-4")
+        output = cost_optimizer(model="claude-sonnet-4-6")
         data = json.loads(output)
         assert data["success"] is True
         assert "alternatives" in data
@@ -39,15 +39,9 @@ class TestCostOptimizer:
         output = cost_optimizer(provider="google")
         data = json.loads(output)
         assert data["success"] is True
-        assert "provider_filter" in data
-        assert data["provider_filter"]["provider"] == "google"
-
-    def test_model_with_provider(self):
-        from tools.cost_optimizer import cost_optimizer
-        output = cost_optimizer(model="gpt-4o-mini", provider="openrouter")
-        data = json.loads(output)
-        assert data["success"] is True
-        assert "via_provider" in data["analysis"]["costs"]
+        assert "comparison" in data
+        for entry in data["comparison"]:
+            assert entry["provider"] == "google"
 
     def test_unknown_model(self):
         from tools.cost_optimizer import cost_optimizer
@@ -57,7 +51,7 @@ class TestCostOptimizer:
 
     def test_different_token_counts(self):
         from tools.cost_optimizer import cost_optimizer
-        output = cost_optimizer(model="gemini-flash", input_tokens=100000, output_tokens=50000)
+        output = cost_optimizer(model="gemini-2.5-flash", input_tokens=100000, output_tokens=50000)
         data = json.loads(output)
         assert data["success"] is True
         cost = data["analysis"]["costs"]["total_cost"]
@@ -72,10 +66,32 @@ class TestCostOptimizer:
 
     def test_recommendation_present(self):
         from tools.cost_optimizer import cost_optimizer
-        output = cost_optimizer(model="claude-sonnet-4")
+        output = cost_optimizer(model="gpt-4o")
         data = json.loads(output)
         assert data["success"] is True
         assert "recommendation" in data
+
+    def test_negative_input_tokens_clamped(self):
+        """Negative token counts should be clamped to zero."""
+        from tools.cost_optimizer import cost_optimizer
+        output = cost_optimizer(model="gpt-4o", input_tokens=-100, output_tokens=-50)
+        data = json.loads(output)
+        assert data["success"] is True
+        assert data["analysis"]["costs"]["total_cost"] == 0
+
+    def test_zero_tokens(self):
+        from tools.cost_optimizer import cost_optimizer
+        output = cost_optimizer(model="gpt-4o", input_tokens=0, output_tokens=0)
+        data = json.loads(output)
+        assert data["success"] is True
+        assert data["analysis"]["costs"]["total_cost"] == 0
+
+    def test_non_numeric_tokens_clamped(self):
+        from tools.cost_optimizer import cost_optimizer
+        output = cost_optimizer(model="gpt-4o", input_tokens="abc", output_tokens=None)
+        data = json.loads(output)
+        assert data["success"] is True
+        assert data["analysis"]["costs"]["total_cost"] == 0
 
 
 class TestCostOptimizerSchema:

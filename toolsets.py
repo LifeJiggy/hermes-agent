@@ -77,8 +77,6 @@ _HERMES_CORE_TOOLS = [
     "kanban_unblock",
     # Computer use (macOS, gated on cua-driver being installed via check_fn)
     "computer_use",
-    # Cost optimization tools
-    "model_recommend", "cost_optimizer",
 ]
 
 # Webhook events may originate from untrusted third-party content (for example,
